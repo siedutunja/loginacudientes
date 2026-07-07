@@ -6,11 +6,11 @@
           <CCardGroup>
             <CCard class="p-4">
               <CCardBody>
-                <b-form @submit.stop.prevent="validarCampos">
+                <b-form @submit.stop.prevent="paso === 1 ? solicitarCodigo() : validarCodigoOTP()">
                   <img src="escudo-tunja.png" height="45" class="float-left mr-2"/>
                   <h1>sieduTunja</h1>
                   <div class="small text-muted text-medium-emphasis float-right">
-                    Login {{version}}
+                    Acudientes {{version}}
                   </div>
                   <hr class="mt-4">
                   <h5 class="text-muted">Iniciar Sesión</h5>
@@ -18,18 +18,35 @@
                     <template #prepend>
                       <b-input-group-text><CIcon name="cil-user"/></b-input-group-text>
                     </template>
-                    <b-form-input type="text" v-model="usuario" placeholder="Usuario" @change="activarUsuario" ref="usuario"></b-form-input>
+                    <b-form-input type="text" v-model.trim="usuario" placeholder="Usuario (Cédula del acudiente)" ref="usuario"></b-form-input>
                   </b-input-group>
-                  <span class="text-left text-danger">{{msjUsuario}}</span>
-                  <b-input-group class="mt-3">
+
+                  <div v-if="paso === 2" class="mt-3">
+                    <b-input-group>
+                      <template #prepend>
+                        <b-input-group-text><CIcon name="cil-lock-locked"/></b-input-group-text>
+                      </template>
+                      <b-form-input type="text" maxlength="6" v-model.trim="codigo" placeholder="Código OTP de 6 dígitos" ref="codigo"></b-form-input>
+                    </b-input-group>
+                    <small class="text-muted d-block mt-2">El código expira en {{ formatoTiempo(segundosExpira) }}</small>
+                    <small class="text-danger d-block" v-if="segundosExpira <= 0">El código expiró. Genere uno nuevo.</small>
+                  </div>
+
+                  <b-button v-if="paso === 1" type="submit" class="btn mb-2 mt-4 btn-block" variant="primary" :disabled="solicitandoCodigo">
+                    {{ solicitandoCodigo ? 'Enviando...' : 'Enviar Código' }}
+                  </b-button>
+                  <b-button v-else type="submit" class="btn mb-2 mt-4 btn-block" variant="primary" :disabled="segundosExpira <= 0 || validandoCodigo || solicitandoCodigo">
+                    {{ validandoCodigo ? 'Validando...' : 'Validar Código' }}
+                  </b-button>
+
+                  <b-input-group class="mt-2" v-if="paso === 2">
                     <template #prepend>
-                      <b-input-group-text><CIcon name="cil-lock-locked"/></b-input-group-text>
+                      <b-input-group-text><CIcon name="cil-loop-circular"/></b-input-group-text>
                     </template>
-                    <b-form-input type="password" v-model="clave" placeholder="Contraseña" @change="activarClave" ref="clave"></b-form-input>
+                    <b-button class="btn-block" variant="outline-primary" :disabled="segundosReenvio > 0 || solicitandoCodigo || validandoCodigo" @click="solicitarCodigo">
+                      {{ solicitandoCodigo ? 'Enviando...' : (segundosReenvio > 0 ? ('Reenviar en ' + formatoTiempo(segundosReenvio)) : 'Generar Nuevo Código') }}
+                    </b-button>
                   </b-input-group>
-                  <span class="text-left text-danger">{{msjClave}}</span>
-                  <b-button type="submit" class="btn mb-2 mt-4 btn-block" variant="primary">Iniciar Sesión</b-button>
-                  <b-button class="float-right text-info mt-3" variant="link" @click="restaurarClave"><small><em>Recuperar mi contraseña</em></small></b-button>
                 </b-form>
               </CCardBody>
             </CCard>
@@ -44,201 +61,126 @@
   import { version } from '@/../package.json'
   import axios from "axios"
   import * as CONFIG from '@/assets/config.js'
-  import jwt from 'jsonwebtoken'
 
   export default {
     name: 'Login',
     data () {
       return {
         usuario: '',
-        clave: '',
-        msjUsuario: '',
-        msjClave: '',
-        datosUsuario: { 
-          id: null, 
-          usuario: null,
-          clave: null,
-          id_rol: null,
-          id_entorno: null,
-          estado: null,
-          vigencia: null
-        },
-        restaVigencia: -1,
+        codigo: '',
+        paso: 1,
+        segundosExpira: 0,
+        segundosReenvio: 0,
+        solicitandoCodigo: false,
+        validandoCodigo: false,
+        timerId: null,
         version: version
       }
     },
     methods: {
-      async validarSesion() {
-        await axios
-        .get(CONFIG.ROOT_PATH + 'login', { params: { usuario: this.usuario }})
-        .then(response => {
-          if (response.data.error){
-            this.mensajeEmergente('danger',CONFIG.TITULO_MSG,response.data.mensaje + ' - Consulta Usuario Login')
-          } else{
-            this.datosUsuario = response.data.datos
-            if (this.datosUsuario == 0) {
-              this.usuario = ''
-              this.clave = ''
-              this.$refs.usuario.focus()
-              this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El Usuario no se encuentra registrado, verifique e intente nuevamente.')
-            } else {
-              if (this.datosUsuario.estado == 1) {
-                if (this.clave == this.datosUsuario.clave) {
-                  if (this.datosUsuario.id_entorno == 1) { //MÓDULO ADMINISTRATIVO
-                    this.restaVigencia = -1
-                    let validaFechaRol = CONFIG.VALIDA_FECHA_ROLES_ADMON.find((element) => element == this.datosUsuario.id_rol);
-                    if (validaFechaRol) {
-                      this.restaVigencia = this.datosUsuario.fechaA - (this.datosUsuario.fechaV + 86400000)
-                    }
-                    if (this.restaVigencia < 0) {
-                      this.trazabilidadSesion()
-                      let token = jwt.sign(this.datosUsuario, CONFIG.SECRET_KEY, {expiresIn: '14400s'})
-                      let validarRoles = CONFIG.ROLES_MODULO_ADMON.find((element) => element == this.datosUsuario.id_rol);
-                      if (validarRoles) {
-                        location.replace(CONFIG.ROOT_MODULO_ADMON + '/?token=' + token)
-                      } else {
-                        this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El rol no corresponde al entorno del usuario.')
-                      }
-                    } else {
-                      this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La fecha válida de acceso ha caducado.')
-                    }
-                  } else if (this.datosUsuario.id_entorno == 2) { //MÓDULO COLEGIO
-                    this.restaVigencia = -1
-                    let validaFechaRol = CONFIG.VALIDA_FECHA_ROLES_COLEGIO.find((element) => element == this.datosUsuario.id_rol);
-                    if (validaFechaRol) {
-                      this.restaVigencia = this.datosUsuario.fechaA - (this.datosUsuario.fechaV + 86400000)
-                    }
-                    if (this.restaVigencia < 0) {
-                      this.trazabilidadSesion()
-                      let token = jwt.sign(this.datosUsuario, CONFIG.SECRET_KEY, {expiresIn: '14400s'})
-                      let validarRoles = CONFIG.ROLES_MODULO_COLEGIO.find((element) => element == this.datosUsuario.id_rol);
-                      if (validarRoles) {
-                        location.replace(CONFIG.ROOT_MODULO_COLEGIO + '/?token=' + token)
-                      } else {
-                        this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El rol no corresponde al entorno del usuario.')
-                      }
-                    } else {
-                      this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La fecha válida de acceso ha caducado.')
-                    }
-                  } else if (this.datosUsuario.id_entorno == 3) { //MÓDULO ACADÉMICO
-                    this.restaVigencia = -1
-                    let validaFechaRol = CONFIG.VALIDA_FECHA_ROLES_ACADEMICO.find((element) => element == this.datosUsuario.id_rol);
-                    if (validaFechaRol) {
-                      this.restaVigencia = this.datosUsuario.fechaA - (this.datosUsuario.fechaV + 86400000)
-                    }
-                    if (this.restaVigencia < 0) {
-                      //this.trazabilidadSesion()
-                      let token = jwt.sign(this.datosUsuario, CONFIG.SECRET_KEY, {expiresIn: '14400s'})
-                      let validarRoles = CONFIG.ROLES_MODULO_ACADEMICO.find((element) => element == this.datosUsuario.id_rol);
-                      if (validarRoles) {
-                        location.replace(CONFIG.ROOT_MODULO_ACADEMICO + '/?token=' + token)
-                      } else {
-                        this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El rol no corresponde al entorno del usuario.')
-                      }
-                    } else {
-                      this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La fecha válida de acceso ha caducado.')
-                    }
-                  } else if (this.datosUsuario.id_entorno == 4) { //MÓDULO DOCENTE
-                    this.restaVigencia = -1
-                    let validaFechaRol = CONFIG.VALIDA_FECHA_ROLES_DOCENTE.find((element) => element == this.datosUsuario.id_rol);
-                    if (validaFechaRol) {
-                      this.restaVigencia = this.datosUsuario.fechaA - (this.datosUsuario.fechaV + 86400000)
-                    }
-                    if (this.restaVigencia < 0) {
-                      this.trazabilidadSesion()
-                      let token = jwt.sign(this.datosUsuario, CONFIG.SECRET_KEY, {expiresIn: '14400s'})
-                      let validarRoles = CONFIG.ROLES_MODULO_DOCENTE.find((element) => element == this.datosUsuario.id_rol);
-                      if (validarRoles) {
-                        location.replace(CONFIG.ROOT_MODULO_DOCENTE + '/?token=' + token)
-                      } else {
-                        this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El rol no corresponde al entorno del usuario.')
-                      }
-                    } else {
-                      this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La fecha válida de acceso ha caducado.')
-                    }
-                  } else if (this.datosUsuario.id_entorno == 5) { //MÓDULO ESTUDIANTE
-                    this.restaVigencia = -1
-                    let validaFechaRol = CONFIG.VALIDA_FECHA_ROLES_ESTUDIANTE.find((element) => element == this.datosUsuario.id_rol);
-                    if (validaFechaRol) {
-                      this.restaVigencia = this.datosUsuario.fechaA - (this.datosUsuario.fechaV + 86400000)
-                    }
-                    if (this.restaVigencia < 0) {
-                      this.trazabilidadSesion()
-                      let token = jwt.sign(this.datosUsuario, CONFIG.SECRET_KEY, {expiresIn: '14400s'})
-                      let validarRoles = CONFIG.ROLES_MODULO_ESTUDIANTE.find((element) => element == this.datosUsuario.id_rol);
-                      if (validarRoles) {
-                        location.replace(CONFIG.ROOT_MODULO_ESTUDIANTE + '/?token=' + token)
-                      } else {
-                        this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El rol no corresponde al entorno del usuario.')
-                      }
-                    } else {
-                      this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La fecha válida de acceso ha caducado.')
-                    }
-                  } else {
-                    this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. El entorno del usuario no esta autorizado para iniciar sesión.')
-                  }
-                } else {
-                  this.clave = ''
-                  this.$refs.clave.focus()
-                  this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La contraseña está errada, verifique e intente nuevamente.')
-                }
-              } else {
-                this.usuario = ''
-                this.clave = ''
-                this.$refs.usuario.focus()
-                this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'¡Lo sentimos!. La cuenta del usuario está inactiva.')
-              }
-            }
-          }
-        })
-        .catch(err => {
-          if (err == 'Error: Network Error') {
-            this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'Lo sentimos, se detecto un problema al conectarse con el servidor. (Certificado)')
-          } else {
-            this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'Algo salio mal y no se pudo realizar: Consulta Usuario Login. Intente más tarde. ' + err)
-          }
-        })
+      iniciarTemporizador() {
+        if (this.timerId) clearInterval(this.timerId)
+        this.timerId = setInterval(() => {
+          if (this.segundosExpira > 0) this.segundosExpira -= 1
+          if (this.segundosReenvio > 0) this.segundosReenvio -= 1
+        }, 1000)
       },
-      async trazabilidadSesion() {
-        let traza = { idUsuario: this.datosUsuario.id, ip: null}
-        await axios
-        .post(CONFIG.ROOT_PATH + 'login/trazabilidad', JSON.stringify(traza), { headers: {"Content-Type": "application/json; charset=utf-8" }})
-        .then(response => {
-          if (response.data.error){
-            this.mensajeEmergente('danger',CONFIG.TITULO_MSG,response.data.mensaje + ' - Trazabilidad Sesión del Usuario')
-          }
-        })
-        .catch(err => {
-          this.mensajeEmergente('danger',CONFIG.TITULO_MSG,'Algo salio mal y no se pudo realizar: Trazabilidad Sesión del Usuario. Intente más tarde. ' + err)
-        })
+      formatoTiempo(segundos) {
+        const min = Math.floor(Math.max(segundos, 0) / 60)
+        const seg = Math.max(segundos, 0) % 60
+        return `${min}:${seg < 10 ? '0' + seg : seg}`
       },
-      restaurarClave() {
-        this.$router.push('./recuperaclave')
-      },
-      activarUsuario() {
-        this.msjUsuario = ''
-      },
-      activarClave() {
-        this.msjClave = ''
-      },
-      validarCampos() {
-        if (this.usuario == '') {
-          this.msjUsuario = 'Digite el usuario'
+      async solicitarCodigo() {
+        if (this.solicitandoCodigo) return
+
+        if (!this.usuario) {
+          this.mensajeEmergente('warning', CONFIG.TITULO_MSG, 'Digite el usuario (cédula del acudiente).')
           this.$refs.usuario.focus()
-        } else if (this.clave == '') {
-          this.msjClave = 'Digite la contraseña'
-          this.$refs.clave.focus()
-        } else {
-          this.validarSesion()
+          return
         }
+
+        if (this.paso === 2 && this.segundosReenvio > 0) {
+          this.mensajeEmergente('warning', CONFIG.TITULO_MSG, `Debe esperar ${this.segundosReenvio}s para reenviar.`)
+          return
+        }
+
+        this.solicitandoCodigo = true
+
+        try {
+          const response = await axios.post(CONFIG.ROOT_PATH + 'acudientes/auth/solicitar-codigo', {
+            documento: this.usuario,
+            vigencia: new Date().getFullYear(),
+            idInstitucion: CONFIG.ID_INSTITUCION
+          })
+
+          if (response.data.error) {
+            if (response.data.segundosReenvio) {
+              this.paso = 2
+              this.segundosReenvio = Number(response.data.segundosReenvio || 0)
+              if (!this.segundosExpira || this.segundosExpira <= 0) this.segundosExpira = 300
+              this.iniciarTemporizador()
+            }
+            this.mensajeEmergente('warning', CONFIG.TITULO_MSG, response.data.mensaje)
+          } else {
+            this.paso = 2
+            this.codigo = ''
+            this.segundosExpira = Number(response.data.datos.expiraEnSegundos || 300)
+            this.segundosReenvio = Number(response.data.datos.reenvioEnSegundos || 60)
+            const ultimos4 = response.data.datos.telefonoUltimos4 || '****'
+            this.iniciarTemporizador()
+            this.$nextTick(() => this.$refs.codigo && this.$refs.codigo.focus())
+            this.mensajeEmergente('success', CONFIG.TITULO_MSG, `Se envió un código al celular que termina en ${ultimos4}.`)
+          }
+        } catch (err) {
+          this.mensajeEmergente('danger', CONFIG.TITULO_MSG, 'No se pudo generar el código. Intente más tarde. ' + err)
+        } finally {
+          this.solicitandoCodigo = false
+        }
+      },
+      async validarCodigoOTP() {
+        if (this.validandoCodigo) return
+
+        if (!this.codigo || this.codigo.length !== 6) {
+          this.mensajeEmergente('warning', CONFIG.TITULO_MSG, 'Digite el código de 6 dígitos.')
+          this.$refs.codigo.focus()
+          return
+        }
+
+        if (this.segundosExpira <= 0) {
+          this.mensajeEmergente('warning', CONFIG.TITULO_MSG, 'El código expiró. Genere uno nuevo.')
+          return
+        }
+
+        this.validandoCodigo = true
+
+        await axios.post(CONFIG.ROOT_PATH + 'acudientes/auth/validar-codigo', {
+          documento: this.usuario,
+          codigo: this.codigo,
+          vigencia: new Date().getFullYear(),
+          idInstitucion: CONFIG.ID_INSTITUCION
+        }).then(response => {
+          if (response.data.error) {
+            this.mensajeEmergente('danger', CONFIG.TITULO_MSG, response.data.mensaje)
+          } else {
+            const token = response.data.datos.token
+            const moduloUrl = response.data.datos.moduloUrl || CONFIG.ROOT_MODULO_ACUDIENTES
+            location.replace(moduloUrl + '?token=' + token)
+          }
+        }).catch(err => {
+          this.mensajeEmergente('danger', CONFIG.TITULO_MSG, 'No se pudo validar el código. Intente más tarde. ' + err)
+        }).finally(() => {
+          this.validandoCodigo = false
+        })
       },
       mensajeEmergente(variante, titulo, contenido) {
         this.$bvToast.toast(contenido, { title: titulo, variant: variante, toaster: "b-toaster-top-center", solid: true, autoHideDelay: 4000, appendToast: false })
       }
     },
-    beforeMount() {
+    beforeDestroy() {
+      if (this.timerId) clearInterval(this.timerId)
+    },
+    beforeMount () {
       sessionStorage.clear()
-
     }
   }
 </script>

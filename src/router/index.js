@@ -22,10 +22,6 @@ function configRoutes () {
         {
           path: '',
           component: () => import('@/views/Login')
-        },
-        {
-          path: 'recuperaclave',
-          component: () => import('@/views/pages/RecuperaClave')
         }
       ]
     },
