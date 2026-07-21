@@ -163,7 +163,8 @@
             this.mensajeEmergente('danger', CONFIG.TITULO_MSG, response.data.mensaje)
           } else {
             const token = response.data.datos.token
-            const moduloUrl = response.data.datos.moduloUrl || CONFIG.ROOT_MODULO_ACUDIENTES
+            //const moduloUrl = response.data.datos.moduloUrl || CONFIG.ROOT_MODULO_ACUDIENTES
+            const moduloUrl = CONFIG.ROOT_MODULO_ACUDIENTES
             location.replace(moduloUrl + '?token=' + token)
           }
         }).catch(err => {
