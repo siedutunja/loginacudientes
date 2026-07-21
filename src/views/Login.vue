@@ -14,25 +14,14 @@
                   </div>
                   <hr class="mt-4">
                   <h5 class="text-muted">Iniciar Sesión</h5>
-                    <b-row>
-                      <b-col>
-                        <b-input-group>
-                          <template #prepend>
-                            <b-input-group-text><CIcon name="cil-user"/></b-input-group-text>
-                          </template>
-                          <b-form-input type="text" v-model.trim="usuario" placeholder="Número de documento" ref="usuario"></b-form-input>
-                        </b-input-group>
-                      </b-col>
-                    </b-row>
-                    <b-row>
-                      <b-col>
-                        <div class="small text-muted text-medium-emphasis float-eft">
-                          Digite el número de documento del Acudiente
-                        </div>
-                      </b-col>
-                    </b-row>
+                  <b-input-group>
+                    <template #prepend>
+                      <b-input-group-text><CIcon name="cil-user"/></b-input-group-text>
+                    </template>
+                    <b-form-input type="text" v-model.trim="usuario" placeholder="Usuario (Cédula del acudiente)" ref="usuario"></b-form-input>
+                  </b-input-group>
 
-                  <div v-if="paso === 2" class="mt-5">
+                  <div v-if="paso === 2" class="mt-3">
                     <b-input-group>
                       <template #prepend>
                         <b-input-group-text><CIcon name="cil-lock-locked"/></b-input-group-text>
@@ -140,7 +129,7 @@
             const ultimos4 = response.data.datos.telefonoUltimos4 || '****'
             this.iniciarTemporizador()
             this.$nextTick(() => this.$refs.codigo && this.$refs.codigo.focus())
-            this.mensajeEmergente('success', CONFIG.TITULO_MSG, `Se envió un código al número de celular que termina en 3*****${ultimos4}.`)
+            this.mensajeEmergente('success', CONFIG.TITULO_MSG, `Se envió un código al celular que termina en ${ultimos4}.`)
           }
         } catch (err) {
           this.mensajeEmergente('danger', CONFIG.TITULO_MSG, 'No se pudo generar el código. Intente más tarde. ' + err)
