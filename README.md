@@ -1,2 +1,2 @@
-# loginacudientes
-Login de Acudientes
+# login
+Iniciar sesión y registro de acudientes
