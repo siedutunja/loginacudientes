@@ -68,6 +68,7 @@
       return {
         usuario: '',
         codigo: '',
+        desafio: '',        
         paso: 1,
         segundosExpira: 0,
         segundosReenvio: 0,
@@ -124,6 +125,7 @@
           } else {
             this.paso = 2
             this.codigo = ''
+            this.desafio = response.data.datos.desafio || ''            
             this.segundosExpira = Number(response.data.datos.expiraEnSegundos || 300)
             this.segundosReenvio = Number(response.data.datos.reenvioEnSegundos || 60)
             const ultimos4 = response.data.datos.telefonoUltimos4 || '****'
@@ -156,6 +158,7 @@
         await axios.post(CONFIG.ROOT_PATH + 'acudientes/auth/validar-codigo', {
           documento: this.usuario,
           codigo: this.codigo,
+          desafio: this.desafio,          
           vigencia: new Date().getFullYear(),
           idInstitucion: CONFIG.ID_INSTITUCION
         }).then(response => {
@@ -165,7 +168,7 @@
             const token = response.data.datos.token
             //const moduloUrl = response.data.datos.moduloUrl || CONFIG.ROOT_MODULO_ACUDIENTES
             const moduloUrl = CONFIG.ROOT_MODULO_ACUDIENTES
-            location.replace(moduloUrl + '?token=' + token)
+            location.replace(moduloUrl + '?token=' + encodeURIComponent(token))            
           }
         }).catch(err => {
           this.mensajeEmergente('danger', CONFIG.TITULO_MSG, 'No se pudo validar el código. Intente más tarde. ' + err)
